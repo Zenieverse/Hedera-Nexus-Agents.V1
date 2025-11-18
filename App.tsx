@@ -146,6 +146,7 @@ const App: React.FC = () => {
           multiplier = activeProposal.effect.value;
       } else if (networkStats.feeMultiplier !== 1.0 && (!activeProposal || activeProposal.status !== 'executed')) {
           // Keep persistent DAO change if no active proposal overwriting, or retrieve from stats
+          // Actually, let's assume networkStats.feeMultiplier holds the "base" DAO policy
           multiplier = networkStats.feeMultiplier; 
       }
 
@@ -154,7 +155,10 @@ const App: React.FC = () => {
           multiplier *= activeNetworkEvent.multiplier;
       }
 
-      // Effective multiplier is used in execution loop, local state not constantly updated to avoid render loops
+      // Update logic would technically go here, but since we use `networkStats.feeMultiplier` as base,
+      // we should calculate EFFECTIVE multiplier during execution, rather than updating state constantly to avoid loops.
+      // We will compute `effectiveMultiplier` inside the execution loop.
+
   }, [activeNetworkEvent, activeProposal, networkStats.feeMultiplier, initialStateLoaded]);
 
 
