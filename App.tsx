@@ -507,7 +507,7 @@ const App: React.FC = () => {
                         </div>
                     </div>
                 ) : selectedAgent?.status === 'error' ? (
-                    <div className="flex-grow flex items-center justify-center text-red-400">
+                    <div className="flex-grow flex items-center justify-center text-red-400 flex-col">
                         <div className="text-center">
                             <p className="font-bold text-lg">Agent {selectedAgent.id} Halted.</p>
                             <p className="text-sm opacity-70 mt-2">Check logs for details.</p>
@@ -516,7 +516,6 @@ const App: React.FC = () => {
                 ) : selectedAgent?.steps.length ? (
                     <>
                         <WorkflowVisualizer steps={selectedAgent.steps} onTransactionClick={handleOpenTransactionModal} />
-                        {/* Agent Memory Bank Visualization */}
                         {selectedAgent && Object.keys(selectedAgent.memory).length > 0 && (
                             <div className="mt-4 pt-4 border-t border-gray-700/50">
                                 <h3 className="text-xs font-bold text-cyan-400/70 mb-2 uppercase tracking-wider flex items-center">
