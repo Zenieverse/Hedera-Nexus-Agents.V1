@@ -1,5 +1,5 @@
 import React from 'react';
-import type { TransactionDetails } from '../types.ts';
+import type { TransactionDetails, AssetTransfer } from '../types.ts';
 import { XIcon } from './XIcon.tsx';
 import { HederaIcon } from './HederaIcon.tsx';
 
@@ -7,6 +7,28 @@ interface TransactionModalProps {
   transaction: TransactionDetails;
   onClose: () => void;
 }
+
+const AssetTransferRow: React.FC<{ transfer: AssetTransfer }> = ({ transfer }) => {
+    return (
+        <div className="flex justify-between items-center text-xs">
+            <div className="flex flex-col">
+                <span className="text-gray-400">From:</span>
+                <span className="text-white font-mono">{transfer.from}</span>
+            </div>
+            <div className="text-center">
+                <div className="text-cyan-400 font-bold">
+                    {transfer.amount ? `${transfer.amount} ${transfer.assetId}` : `1x ${transfer.assetId}`}
+                </div>
+                <div className="text-gray-500">&rarr;</div>
+            </div>
+            <div className="flex flex-col text-right">
+                <span className="text-gray-400">To:</span>
+                <span className="text-white font-mono">{transfer.to}</span>
+            </div>
+        </div>
+    );
+};
+
 
 const TransactionModal: React.FC<TransactionModalProps> = ({ transaction, onClose }) => {
   return (
@@ -54,19 +76,16 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ transaction, onClos
             <span className="md:col-span-2 text-white">{transaction.memo}</span>
           </div>
 
-          <div className="pt-4">
-            <h3 className="text-gray-400 mb-2 font-bold">Transfers</h3>
-            <div className="bg-gray-900/50 rounded-md p-3 space-y-2 border border-gray-700">
-                {transaction.transfers.map((transfer, index) => (
-                    <div key={index} className="flex justify-between items-center">
-                        <span className="text-gray-300">Account: {transfer.account}</span>
-                        <span className={transfer.amount.startsWith('-') ? 'text-red-400' : 'text-green-400'}>
-                            {transfer.amount}
-                        </span>
-                    </div>
-                ))}
+          {transaction.assetTransfers && transaction.assetTransfers.length > 0 && (
+            <div className="pt-4">
+              <h3 className="text-gray-400 mb-2 font-bold">Asset Transfers</h3>
+              <div className="bg-gray-900/50 rounded-md p-3 space-y-3 border border-gray-700">
+                  {transaction.assetTransfers.map((transfer, index) => (
+                      <AssetTransferRow key={index} transfer={transfer} />
+                  ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
         
         <div className="p-4 border-t border-gray-700 text-right">

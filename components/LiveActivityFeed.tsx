@@ -45,7 +45,7 @@ const LiveActivityFeed: React.FC<LiveActivityFeedProps> = ({ logs }) => {
                 ) : (
                     <div className="space-y-2">
                     {logs.map((log, index) => (
-                        <div key={index} className="flex items-start animate-fade-in">
+                        <div key={index} className="flex items-start animate-fade-in" style={{ animationDelay: `${Math.min(index * 50, 500)}ms` }}>
                             <span className="mr-2 mt-1"><LogIcon type={log.type} /></span>
                             <span className="text-gray-500 mr-2">{log.timestamp.toLocaleTimeString()}</span>
                             {log.agentId && <span className="text-cyan-400/70 mr-2 font-bold">[{log.agentId}]</span>}

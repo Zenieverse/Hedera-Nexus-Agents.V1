@@ -6,23 +6,63 @@ import NetworkStats from './components/NetworkStats.tsx';
 import WorkflowVisualizer from './components/WorkflowVisualizer.tsx';
 import TransactionModal from './components/TransactionModal.tsx';
 import AgentFleet from './components/AgentFleet.tsx';
+import DigitalAssetLedger from './components/DigitalAssetLedger.tsx';
+import OracleDataFeed from './components/OracleDataFeed.tsx';
+import HcsMessageFeed from './components/HcsMessageFeed.tsx';
 import { generateTaskWorkflow } from './services/geminiService.ts';
-import type { TaskStep, ActivityLog, NetworkStatsData, TransactionDetails, Agent } from './types.ts';
+import type { TaskStep, ActivityLog, NetworkStatsData, TransactionDetails, Agent, Ledger, AssetTransfer, OracleData, HcsMessage } from './types.ts';
 import { CubeIcon } from './components/CubeIcon.tsx';
 
+const SAVED_STATE_KEY = 'hederaNexusAgentsState_v2';
+
 const App: React.FC = () => {
+  const [initialStateLoaded, setInitialStateLoaded] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [networkStats, setNetworkStats] = useState<NetworkStatsData>({
-    tps: 12456,
-    activeAgents: 0,
-    consensusTime: 2.1,
-    totalFees: 0,
+    tps: 12456, activeAgents: 0, consensusTime: 2.1, totalFees: 0,
   });
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionDetails | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [ledger, setLedger] = useState<Ledger>({});
+  const [oracleData, setOracleData] = useState<OracleData>({
+    hbarPrice: 0.08 + (Math.random() - 0.5) * 0.01,
+    marketSentiment: 'neutral',
+  });
+  const [hcsMessages, setHcsMessages] = useState<HcsMessage[]>([]);
+
+  // Load state from localStorage on initial mount
+  useEffect(() => {
+    try {
+      const savedState = localStorage.getItem(SAVED_STATE_KEY);
+      if (savedState) {
+        const parsed = JSON.parse(savedState);
+        setAgents(parsed.agents || []);
+        setSelectedAgentId(parsed.selectedAgentId || null);
+        setActivityLogs((parsed.activityLogs || []).map((log: any) => ({...log, timestamp: new Date(log.timestamp)})));
+        setNetworkStats(parsed.networkStats || { tps: 12456, activeAgents: 0, consensusTime: 2.1, totalFees: 0 });
+        setLedger(parsed.ledger || {});
+        setHcsMessages((parsed.hcsMessages || []).map((msg: any) => ({...msg, timestamp: new Date(msg.timestamp)})));
+      }
+    } catch (error) {
+      console.error("Failed to load saved state:", error);
+    }
+    setInitialStateLoaded(true);
+  }, []);
+
+  // Save state to localStorage whenever it changes
+  useEffect(() => {
+    if (!initialStateLoaded) return;
+    try {
+      const stateToSave = { agents, selectedAgentId, activityLogs, networkStats, ledger, hcsMessages };
+      localStorage.setItem(SAVED_STATE_KEY, JSON.stringify(stateToSave));
+    } catch (error) {
+      console.error("Failed to save state:", error);
+    }
+  }, [agents, selectedAgentId, activityLogs, networkStats, ledger, hcsMessages, initialStateLoaded]);
+
 
   const generateMockTransactionId = useCallback(() => {
     const shard = 0;
@@ -34,8 +74,20 @@ const App: React.FC = () => {
   }, []);
 
   const addLog = useCallback((message: string, type: ActivityLog['type'] = 'info', agentId?: string) => {
-    setActivityLogs(prev => [{ message, type, timestamp: new Date(), agentId }, ...prev]);
+    setActivityLogs(prev => [{ message, type, timestamp: new Date(), agentId }, ...prev.slice(0, 199)]);
   }, []);
+
+  // Simulate Oracle data updates
+  useEffect(() => {
+    const oracleInterval = setInterval(() => {
+      setOracleData(prev => ({
+        hbarPrice: Math.max(0.05, prev.hbarPrice + (Math.random() - 0.5) * 0.005),
+        marketSentiment: ['bullish', 'bearish', 'neutral'][Math.floor(Math.random() * 3)] as OracleData['marketSentiment'],
+      }));
+    }, 5000);
+    return () => clearInterval(oracleInterval);
+  }, []);
+
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -58,17 +110,70 @@ const App: React.FC = () => {
         const inProgressIndex = agent.steps.findIndex(s => s.status === 'in-progress');
         if (inProgressIndex !== -1) {
             const timer = setTimeout(() => {
-                const stepCost = agent.steps[inProgressIndex].cost || 0;
+                const completedStep = agent.steps[inProgressIndex];
+                let assetTransfers: AssetTransfer[] = [];
+                let agentMemoryUpdate: Partial<Agent['memory']> = {};
+
+                // Handle special step types
+                if (completedStep.type === 'Oracle') {
+                    const value = oracleData[completedStep.oracleKey!];
+                    agentMemoryUpdate[completedStep.oracleKey!] = value;
+                    addLog(`Queried Oracle for '${completedStep.oracleKey}': ${value}`, 'success', agent.id);
+                } else if (completedStep.type === 'HCS' && completedStep.message) {
+                    let processedMessage = completedStep.message;
+                    Object.entries(agent.memory).forEach(([key, value]) => {
+                       processedMessage = processedMessage.replace(new RegExp(`{{${key}}}`, 'g'), String(value));
+                    });
+                    const newHcsMessage: HcsMessage = { agentId: agent.id, message: processedMessage, timestamp: new Date() };
+                    setHcsMessages(prev => [newHcsMessage, ...prev.slice(0, 49)]);
+                    addLog(`Broadcast HCS message: "${processedMessage}"`, 'success', agent.id);
+                } else if (completedStep.type === 'Token Service') {
+                    setLedger(currentLedger => {
+                        let newLedger = JSON.parse(JSON.stringify(currentLedger));
+                        if (completedStep.tokenAction === 'mint_nft' && completedStep.assetId) {
+                            const newNft = { id: `${completedStep.assetId}-${Math.floor(Math.random() * 1000)}`, name: completedStep.assetId };
+                            newLedger[agent.id].nfts.push(newNft);
+                            assetTransfers.push({ assetId: newNft.id, from: 'MINT', to: agent.id });
+                            addLog(`Minted NFT ${newNft.id}.`, 'success', agent.id);
+                        } else if (completedStep.tokenAction === 'transfer_ft' && completedStep.assetId && completedStep.assetAmount && completedStep.targetAgent) {
+                            let targetId = completedStep.targetAgent;
+                            if (targetId === 'ANOTHER_AGENT') {
+                                const otherAgents = agents.filter(a => a.id !== agent.id && a.status !== 'error');
+                                targetId = otherAgents.length > 0 ? otherAgents[Math.floor(Math.random() * otherAgents.length)].id : '';
+                            }
+                            const senderFts = newLedger[agent.id].fts;
+                            const senderTokenIndex = senderFts.findIndex(t => t.id === completedStep.assetId);
+                            if (targetId && newLedger[targetId] && senderTokenIndex > -1 && senderFts[senderTokenIndex].amount >= completedStep.assetAmount) {
+                                senderFts[senderTokenIndex].amount -= completedStep.assetAmount;
+                                const receiverFts = newLedger[targetId].fts;
+                                const receiverTokenIndex = receiverFts.findIndex(t => t.id === completedStep.assetId);
+                                if (receiverTokenIndex > -1) {
+                                    receiverFts[receiverTokenIndex].amount += completedStep.assetAmount;
+                                } else {
+                                    receiverFts.push({ id: completedStep.assetId, amount: completedStep.assetAmount });
+                                }
+                                assetTransfers.push({ assetId: completedStep.assetId, amount: completedStep.assetAmount, from: agent.id, to: targetId });
+                                addLog(`Transferred ${completedStep.assetAmount} ${completedStep.assetId} to ${targetId}.`, 'success', agent.id);
+                            } else {
+                                addLog(`FT Transfer failed. Check balance or target.`, 'error', agent.id);
+                            }
+                        }
+                        return newLedger;
+                    });
+                }
+                
+                const stepCost = completedStep.cost || 0;
                 setAgents(prev => prev.map(a => {
                     if (a.id !== agent.id) return a;
                     const transactionId = generateMockTransactionId();
                     addLog(`Step Complete: ${a.steps[inProgressIndex].name}. Cost: Ħ${stepCost.toFixed(6)}. TxID: ${transactionId}`, 'success', a.id);
                     const newSteps = a.steps.map((step, index) => 
-                        index === inProgressIndex ? { ...step, status: 'completed', transactionId } : step
+                        index === inProgressIndex ? { ...step, status: 'completed', transactionId, assetTransfers } : step
                     );
                     const newBalance = a.hbarBalance - stepCost;
+                    const newMemory = { ...a.memory, ...agentMemoryUpdate };
                     setNetworkStats(prev => ({ ...prev, totalFees: prev.totalFees + stepCost }));
-                    return { ...a, steps: newSteps, hbarBalance: newBalance };
+                    return { ...a, steps: newSteps, hbarBalance: newBalance, memory: newMemory };
                 }));
             }, 1500 + Math.random() * 1000);
             cleanupTimers.push(() => clearTimeout(timer));
@@ -80,6 +185,22 @@ const App: React.FC = () => {
             const stepToExecute = agent.steps[pendingIndex];
             const stepCost = stepToExecute.cost || 0;
             
+            // Conditional check
+            if (stepToExecute.condition) {
+                const { key, operator, value } = stepToExecute.condition;
+                const memoryValue = agent.memory[key as keyof Agent['memory']];
+                let conditionMet = false;
+                if (typeof memoryValue === 'number') {
+                    if (operator === 'gt' && memoryValue > value) conditionMet = true;
+                    if (operator === 'lt' && memoryValue < value) conditionMet = true;
+                }
+                if (!conditionMet) {
+                    addLog(`Condition not met, skipping step: "${stepToExecute.name}"`, 'info', agent.id);
+                    setAgents(prev => prev.map(a => a.id === agent.id ? { ...a, steps: a.steps.map((s, i) => i === pendingIndex ? { ...s, status: 'skipped' } : s) } : a));
+                    return; // Continue to next tick
+                }
+            }
+
             if (agent.hbarBalance < stepCost) {
                  addLog(`Execution failed: Insufficient funds. Required: ~Ħ${stepCost.toFixed(6)}, Balance: Ħ${agent.hbarBalance.toFixed(6)}`, 'error', agent.id);
                  setAgents(prev => prev.map(a => a.id === agent.id ? { ...a, status: 'error' } : a));
@@ -100,7 +221,7 @@ const App: React.FC = () => {
             return;
         }
 
-        if (agent.steps.length > 0 && agent.steps.every(s => s.status === 'completed')) {
+        if (agent.steps.length > 0 && agent.steps.every(s => s.status === 'completed' || s.status === 'skipped')) {
              if (agent.status !== 'completed') {
                 setAgents(prev => prev.map(a => a.id === agent.id ? { ...a, status: 'completed' } : a));
                 addLog('All tasks completed. Agent entering standby mode.', 'info', agent.id);
@@ -111,19 +232,21 @@ const App: React.FC = () => {
     return () => {
         cleanupTimers.forEach(cleanup => cleanup());
     };
-  }, [agents, addLog, generateMockTransactionId]);
+  }, [agents, addLog, generateMockTransactionId, oracleData]);
 
   const handleDeployAgent = async (taskDescription: string) => {
     setIsLoading(true);
     const agentId = `Nexus-${Math.floor(Math.random() * 900) + 100}`;
-    const initialBalance = 50 + Math.random() * 50; // Random balance between 50 and 100 HBAR
-    const newAgent: Agent = { id: agentId, taskDescription, status: 'initializing', steps: [], hbarBalance: initialBalance };
+    const initialBalance = 50 + Math.random() * 50;
+    const newAgent: Agent = { id: agentId, taskDescription, status: 'initializing', steps: [], hbarBalance: initialBalance, memory: {} };
 
     setAgents(prev => [...prev, newAgent]);
+    setLedger(prev => ({ ...prev, [agentId]: { fts: [{id: 'NEX-GOV', amount: 1000}], nfts: [] } }));
     setSelectedAgentId(agentId);
     
     addLog(`Deploying new agent ${agentId} for task: "${taskDescription}"...`);
     addLog(`[${agentId}] Wallet funded with Ħ${initialBalance.toFixed(4)}.`, 'info', agentId);
+    addLog(`[${agentId}] Allocated 1000 NEX-GOV tokens.`, 'info', agentId);
     addLog(`[${agentId}] Contacting Nexus AI Coordinator...`, 'info', agentId);
 
     try {
@@ -141,21 +264,13 @@ const App: React.FC = () => {
 
   const handleOpenTransactionModal = (step: TaskStep) => {
     if (!step.transactionId) return;
-
-    const [accountId, timestamp] = step.transactionId.split('@');
-    const consensusTimestamp = new Date(parseInt(timestamp.split('.')[0]) * 1000).toISOString();
-
     setSelectedTransaction({
       id: step.transactionId,
       status: 'SUCCESS',
-      consensusTimestamp,
+      consensusTimestamp: new Date().toISOString(),
       memo: step.name,
-      transfers: [
-        { account: '0.0.98', amount: '-1.5 HBAR' },
-        { account: accountId, amount: '+1.2 HBAR' },
-        { account: '0.0.3', amount: '+0.3 HBAR (fees)' }
-      ],
-      fee: `Ħ${(step.cost || 0).toFixed(6)}`
+      fee: `Ħ${(step.cost || 0).toFixed(6)}`,
+      assetTransfers: step.assetTransfers,
     });
     setIsModalOpen(true);
   };
@@ -170,12 +285,12 @@ const App: React.FC = () => {
       <Header />
       <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
-          <div className="lg:col-span-4 space-y-6">
+          <div className="lg:col-span-3 space-y-6">
             <AgentControlPanel onDeploy={handleDeployAgent} isLoading={isLoading} />
             <AgentFleet agents={agents} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} />
             <NetworkStats stats={networkStats} />
           </div>
-          <div className="lg:col-span-8 space-y-6 flex flex-col min-h-[60vh]">
+          <div className="lg:col-span-6 space-y-6 flex flex-col min-h-[60vh]">
             <div className="bg-gray-800/50 border border-cyan-500/20 rounded-lg p-4 flex-grow flex flex-col h-1/2">
                 <h2 className="text-lg font-bold text-cyan-400 mb-4 flex items-center">
                     <CubeIcon className="w-5 h-5 mr-2" />
@@ -199,6 +314,11 @@ const App: React.FC = () => {
                 )}
             </div>
             <LiveActivityFeed logs={activityLogs} />
+          </div>
+          <div className="lg:col-span-3 space-y-6 flex flex-col">
+            <OracleDataFeed data={oracleData} />
+            <HcsMessageFeed messages={hcsMessages} />
+            <DigitalAssetLedger ledger={ledger} agents={agents} />
           </div>
         </div>
       </main>

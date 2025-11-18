@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AgentIcon } from './AgentIcon.tsx';
+import { ResetIcon } from './ResetIcon.tsx';
 
 interface AgentControlPanelProps {
   onDeploy: (taskDescription: string) => void;
@@ -8,8 +9,8 @@ interface AgentControlPanelProps {
 
 const presetTasks = [
     "Mint a new NFT collection for a digital artist and verify on-chain.",
-    "Execute a multi-signature asset transfer between two corporate accounts.",
-    "Record supply chain data on Hedera Consensus Service for a shipment of coffee beans."
+    "Create a new NFT for a digital land deed and transfer 100 NEX-GOV tokens to another agent.",
+    "Query the Oracle for the HBAR price. If it's below $0.08, mint a 'BUY-SIGNAL' NFT. Then, broadcast the price on the HCS.",
 ];
 
 const AgentControlPanel: React.FC<AgentControlPanelProps> = ({ onDeploy, isLoading }) => {
@@ -19,6 +20,7 @@ const AgentControlPanel: React.FC<AgentControlPanelProps> = ({ onDeploy, isLoadi
     e.preventDefault();
     if (task.trim() && !isLoading) {
       onDeploy(task);
+      setTask('');
     }
   };
   
@@ -28,12 +30,24 @@ const AgentControlPanel: React.FC<AgentControlPanelProps> = ({ onDeploy, isLoadi
     }
   };
 
+  const handleReset = () => {
+    if (window.confirm("Are you sure you want to reset the entire simulation? All agents and assets will be deleted.")) {
+        localStorage.removeItem('hederaNexusAgentsState_v2');
+        window.location.reload();
+    }
+  }
+
   return (
     <div className="bg-gray-800/50 border border-cyan-500/20 rounded-lg p-4">
-      <h2 className="text-lg font-bold text-cyan-400 mb-4 flex items-center">
-        <AgentIcon className="w-5 h-5 mr-2" />
-        Agent Deployment
-      </h2>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-bold text-cyan-400 flex items-center">
+          <AgentIcon className="w-5 h-5 mr-2" />
+          Agent Deployment
+        </h2>
+        <button onClick={handleReset} title="Reset Simulation" className="text-gray-400 hover:text-red-400 transition-colors p-1 rounded-md">
+            <ResetIcon className="w-5 h-5" />
+        </button>
+      </div>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label htmlFor="task" className="block text-sm font-medium text-gray-300 mb-1">
@@ -58,7 +72,7 @@ const AgentControlPanel: React.FC<AgentControlPanelProps> = ({ onDeploy, isLoadi
                         type="button"
                         onClick={() => handlePresetClick(preset)}
                         disabled={isLoading}
-                        className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-md text-cyan-300 transition-colors duration-200 disabled:opacity-50"
+                        className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-md text-cyan-300 transition-colors duration-200 disabled:opacity-50 text-left"
                     >
                         Preset {index + 1}
                     </button>

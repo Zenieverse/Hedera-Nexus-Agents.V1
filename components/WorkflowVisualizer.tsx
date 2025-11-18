@@ -5,6 +5,9 @@ import { HcsIcon } from './HcsIcon.tsx';
 import { SmartContractIcon } from './SmartContractIcon.tsx';
 import { TokenServiceIcon } from './TokenServiceIcon.tsx';
 import { VerificationIcon } from './VerificationIcon.tsx';
+import { OracleIcon } from './OracleIcon.tsx';
+import { DecisionIcon } from './DecisionIcon.tsx';
+import { RssIcon } from './RssIcon.tsx';
 import { CubeIcon } from './CubeIcon.tsx';
 
 const StatusIcon: React.FC<{ status: TaskStep['status'] }> = ({ status }) => {
@@ -17,6 +20,12 @@ const StatusIcon: React.FC<{ status: TaskStep['status'] }> = ({ status }) => {
             <div className="w-2 h-2 bg-cyan-200 rounded-full"></div>
         </div>
       );
+    case 'skipped':
+      return (
+        <div className="w-5 h-5 rounded-full border-2 border-dashed border-gray-600 flex items-center justify-center" title="Skipped">
+            <div className="w-2.5 h-0.5 bg-gray-600"></div>
+        </div>
+      );
     case 'pending':
     default:
       return <div className="w-5 h-5 rounded-full border-2 border-gray-500"></div>;
@@ -25,17 +34,17 @@ const StatusIcon: React.FC<{ status: TaskStep['status'] }> = ({ status }) => {
 
 const StepTypeIcon: React.FC<{ type: string }> = ({ type }) => {
     const className = "w-4 h-4 text-cyan-300/70";
-    switch(type?.toLowerCase()) {
-        case 'hcs':
-            return <HcsIcon className={className} />;
-        case 'smart contract':
-            return <SmartContractIcon className={className} />;
-        case 'token service':
-            return <TokenServiceIcon className={className} />;
-        case 'verification':
-            return <VerificationIcon className={className} />;
-        default:
-            return <CubeIcon className={className} />;
+    const typeLower = type?.toLowerCase();
+    
+    if (typeLower.includes('conditional')) return <DecisionIcon className={className} />;
+    
+    switch(typeLower) {
+        case 'hcs': return <RssIcon className={className} />;
+        case 'smart contract': return <SmartContractIcon className={className} />;
+        case 'token service': return <TokenServiceIcon className={className} />;
+        case 'verification': return <VerificationIcon className={className} />;
+        case 'oracle': return <OracleIcon className={className} />;
+        default: return <CubeIcon className={className} />;
     }
 };
 
@@ -53,7 +62,7 @@ const WorkflowVisualizer: React.FC<WorkflowVisualizerProps> = ({ steps, onTransa
             <StatusIcon status={step.status} />
             <div className="flex-1">
               <div className="flex justify-between items-start">
-                  <p className={`font-bold flex items-center gap-2 ${step.status !== 'pending' ? 'text-cyan-300' : 'text-gray-400'}`}>
+                  <p className={`font-bold flex items-center gap-2 ${step.status === 'pending' ? 'text-gray-400' : step.status === 'skipped' ? 'text-gray-500 line-through' : 'text-cyan-300'}`}>
                     <StepTypeIcon type={step.type} />
                     {step.name}
                   </p>
@@ -63,8 +72,8 @@ const WorkflowVisualizer: React.FC<WorkflowVisualizerProps> = ({ steps, onTransa
                       </span>
                   )}
               </div>
-              <p className={`text-sm ${step.status !== 'pending' ? 'text-gray-300' : 'text-gray-500'}`}>
-                {step.description}
+              <p className={`text-sm ${step.status === 'pending' ? 'text-gray-500' : step.status === 'skipped' ? 'text-gray-600' : 'text-gray-300'}`}>
+                {step.description} {step.status === 'skipped' && '(Skipped)'}
               </p>
               {step.status === 'completed' && step.transactionId && (
                   <button onClick={() => onTransactionClick(step)} className="text-xs text-cyan-400 hover:text-cyan-200 hover:underline mt-1 transition-colors">
@@ -74,7 +83,7 @@ const WorkflowVisualizer: React.FC<WorkflowVisualizerProps> = ({ steps, onTransa
             </div>
           </div>
           {index < steps.length - 1 && (
-            <div className="ml-2 h-6 w-px bg-gray-600 my-1"></div>
+            <div className={`ml-2 h-6 w-px my-1 ${steps[index+1].status === 'skipped' ? 'bg-gray-700 border-l border-dashed border-gray-500' : 'bg-gray-600'}`}></div>
           )}
         </React.Fragment>
       ))}
