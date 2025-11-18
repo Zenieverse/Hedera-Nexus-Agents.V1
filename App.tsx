@@ -527,7 +527,7 @@ const App: React.FC = () => {
                                     {Object.entries(selectedAgent.memory).map(([k, v]) => (
                                         <div key={k} className="bg-gray-900/50 px-2 py-1.5 rounded border border-gray-700 text-xs flex justify-between items-center">
                                             <span className="text-gray-400">{k}:</span>
-                                            <span className="text-cyan-300 font-mono">{v}</span>
+                                            <span className="text-cyan-300 font-mono">{String(v)}</span>
                                         </div>
                                     ))}
                                 </div>
