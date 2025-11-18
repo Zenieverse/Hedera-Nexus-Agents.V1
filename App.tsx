@@ -221,6 +221,7 @@ const App: React.FC = () => {
   // Network Stats Updates
   useEffect(() => {
     const interval = setInterval(() => {
+        // Added explicit type to sum and holdings to prevent TS errors
         const currentTotalStaked = Object.values(ledger).reduce((sum: number, holdings: AssetHoldings) => sum + (holdings.stakedNexGov || 0), 0);
         
         setNetworkStats(prevStats => ({
@@ -351,10 +352,8 @@ const App: React.FC = () => {
                     const xpGain = 50 + Math.floor(Math.random() * 50);
                     const newXp = a.xp + xpGain;
                     const nextLevel = Math.floor(newXp / 500) + 1;
-                    let levelUp = false;
                     if (nextLevel > a.level) {
                         addLog(`LEVEL UP! Agent ${a.id} reached Level ${nextLevel}. Efficiency increased.`, 'success', a.id);
-                        levelUp = true;
                     }
 
                     const newSteps = a.steps.map((step, index) => 
@@ -516,6 +515,7 @@ const App: React.FC = () => {
                 ) : selectedAgent?.steps.length ? (
                     <>
                         <WorkflowVisualizer steps={selectedAgent.steps} onTransactionClick={handleOpenTransactionModal} />
+                        {/* Active Memory Visualization */}
                         {selectedAgent && Object.keys(selectedAgent.memory).length > 0 && (
                             <div className="mt-4 pt-4 border-t border-gray-700/50">
                                 <h3 className="text-xs font-bold text-cyan-400/70 mb-2 uppercase tracking-wider flex items-center">
