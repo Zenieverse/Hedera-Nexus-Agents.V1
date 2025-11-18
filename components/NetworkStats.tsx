@@ -1,8 +1,10 @@
+
 import React from 'react';
 import { LightningBoltIcon } from './LightningBoltIcon.tsx';
 import { AgentIcon } from './AgentIcon.tsx';
 import { ClockIcon } from './ClockIcon.tsx';
 import { CoinIcon } from './CoinIcon.tsx';
+import { GovernanceIcon } from './GovernanceIcon.tsx';
 import type { NetworkStatsData } from '../types.ts';
 
 const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string; unit: string }> = ({ icon, label, value, unit }) => (
@@ -32,6 +34,7 @@ const NetworkStats: React.FC<NetworkStatsProps> = ({ stats }) => {
                 <StatCard icon={<AgentIcon className="w-5 h-5" />} label="Active Agents" value={stats.activeAgents.toString()} unit="Agents" />
                 <StatCard icon={<ClockIcon className="w-5 h-5" />} label="Avg. Consensus Time" value={stats.consensusTime.toString()} unit="seconds" />
                 <StatCard icon={<CoinIcon className="w-5 h-5" />} label="Total Fees Collected" value={`Ħ${stats.totalFees.toFixed(4)}`} unit="HBAR" />
+                <StatCard icon={<GovernanceIcon className="w-5 h-5" />} label="Total DAO Staked" value={stats.totalStaked.toLocaleString()} unit="NEX-GOV" />
             </div>
         </div>
     );

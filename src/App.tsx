@@ -146,6 +146,7 @@ const App: React.FC = () => {
           multiplier = activeProposal.effect.value;
       } else if (networkStats.feeMultiplier !== 1.0 && (!activeProposal || activeProposal.status !== 'executed')) {
           // Keep persistent DAO change if no active proposal overwriting, or retrieve from stats
+          // Actually, let's assume networkStats.feeMultiplier holds the "base" DAO policy
           multiplier = networkStats.feeMultiplier; 
       }
 
@@ -154,7 +155,10 @@ const App: React.FC = () => {
           multiplier *= activeNetworkEvent.multiplier;
       }
 
-      // Effective multiplier is used in execution loop, local state not constantly updated to avoid render loops
+      // Update logic would technically go here, but since we use `networkStats.feeMultiplier` as base,
+      // we should calculate EFFECTIVE multiplier during execution, rather than updating state constantly to avoid loops.
+      // We will compute `effectiveMultiplier` inside the execution loop.
+
   }, [activeNetworkEvent, activeProposal, networkStats.feeMultiplier, initialStateLoaded]);
 
 
@@ -217,7 +221,7 @@ const App: React.FC = () => {
   // Network Stats Updates
   useEffect(() => {
     const interval = setInterval(() => {
-        const currentTotalStaked = Object.values(ledger).reduce((sum: number, holdings: AssetHoldings) => sum + (holdings.stakedNexGov || 0), 0);
+        const currentTotalStaked = Object.values(ledger).reduce((sum, holdings: AssetHoldings) => sum + (holdings.stakedNexGov || 0), 0);
         
         setNetworkStats(prevStats => ({
             ...prevStats,
@@ -446,13 +450,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleStopAgent = (agentId: string) => {
-      if (window.confirm(`Are you sure you want to stop agent ${agentId}? This will halt its current mission.`)) {
-          setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'error' } : a));
-          addLog(`Agent ${agentId} manually stopped by user.`, 'error', agentId);
-      }
-  };
-
   const handleOpenTransactionModal = (step: TaskStep) => {
     if (!step.transactionId) return;
     setSelectedTransaction({
@@ -481,12 +478,7 @@ const App: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
           <div className="lg:col-span-3 space-y-6">
             <AgentControlPanel onDeploy={handleDeployAgent} isLoading={isLoading} />
-            <AgentFleet 
-                agents={agents} 
-                selectedAgentId={selectedAgentId} 
-                onSelectAgent={handleSelectAgent} 
-                onStopAgent={handleStopAgent}
-            />
+            <AgentFleet agents={agents} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} />
             <NetworkStats stats={networkStats} />
           </div>
           <div className="lg:col-span-6 space-y-6 flex flex-col min-h-[60vh]">
@@ -503,33 +495,9 @@ const App: React.FC = () => {
                         </div>
                     </div>
                 ) : selectedAgent?.status === 'error' ? (
-                    <div className="flex-grow flex items-center justify-center text-red-400">
-                        <div className="text-center">
-                            <p>Agent {selectedAgent.id} Halted.</p>
-                            <p className="text-sm opacity-70">Check logs for details.</p>
-                        </div>
-                    </div>
+                    <div className="flex-grow flex items-center justify-center text-red-400">Failed to generate workflow for agent {selectedAgent.id}.</div>
                 ) : selectedAgent?.steps.length ? (
-                    <>
-                        <WorkflowVisualizer steps={selectedAgent.steps} onTransactionClick={handleOpenTransactionModal} />
-                        {/* Agent Memory Bank Visualization */}
-                        {selectedAgent && Object.keys(selectedAgent.memory).length > 0 && (
-                            <div className="mt-4 pt-4 border-t border-gray-700/50">
-                                <h3 className="text-xs font-bold text-cyan-400/70 mb-2 uppercase tracking-wider flex items-center">
-                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
-                                    Active Memory
-                                </h3>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {Object.entries(selectedAgent.memory).map(([k, v]) => (
-                                        <div key={k} className="bg-gray-900/50 px-2 py-1.5 rounded border border-gray-700 text-xs flex justify-between items-center">
-                                            <span className="text-gray-400">{k}:</span>
-                                            <span className="text-cyan-300 font-mono">{v}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </>
+                    <WorkflowVisualizer steps={selectedAgent.steps} onTransactionClick={handleOpenTransactionModal} />
                 ) : (
                     <div className="flex-grow flex items-center justify-center">
                         <p className="text-gray-400">Deploy an agent to see its workflow.</p>

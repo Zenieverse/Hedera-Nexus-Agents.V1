@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { TaskStep } from '../types.ts';
 import { CheckCircleIcon } from './CheckCircleIcon.tsx';
@@ -9,6 +10,7 @@ import { OracleIcon } from './OracleIcon.tsx';
 import { DecisionIcon } from './DecisionIcon.tsx';
 import { RssIcon } from './RssIcon.tsx';
 import { CubeIcon } from './CubeIcon.tsx';
+import { GovernanceIcon } from './GovernanceIcon.tsx';
 
 const StatusIcon: React.FC<{ status: TaskStep['status'] }> = ({ status }) => {
   switch (status) {
@@ -37,6 +39,7 @@ const StepTypeIcon: React.FC<{ type: string }> = ({ type }) => {
     const typeLower = type?.toLowerCase();
     
     if (typeLower.includes('conditional')) return <DecisionIcon className={className} />;
+    if (typeLower.includes('governance')) return <GovernanceIcon className={className} />;
     
     switch(typeLower) {
         case 'hcs': return <RssIcon className={className} />;

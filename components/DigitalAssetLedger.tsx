@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { Ledger, Agent } from '../types.ts';
 import { WalletIcon } from './WalletIcon.tsx';
@@ -33,9 +34,9 @@ const DigitalAssetLedger: React.FC<DigitalAssetLedgerProps> = ({ ledger, agents 
                         return (
                             <div key={agent.id} className="bg-gray-900/50 p-2 rounded-md">
                                 <h3 className="font-bold text-cyan-300/80 text-sm mb-2">{agent.id}</h3>
-                                <div className="space-y-1">
+                                <div className="space-y-2">
                                     <div>
-                                        <p className="text-gray-400 font-semibold">Fungible Tokens (FTs)</p>
+                                        <p className="text-gray-400 font-semibold mb-1">Fungible Tokens (FTs)</p>
                                         {holdings.fts.length > 0 ? (
                                             holdings.fts.map(ft => (
                                                 <div key={ft.id} className="flex justify-between items-center pl-2">
@@ -46,9 +47,16 @@ const DigitalAssetLedger: React.FC<DigitalAssetLedgerProps> = ({ ledger, agents 
                                         ) : (
                                             <p className="text-gray-500 pl-2">None</p>
                                         )}
+                                        {/* Staked display */}
+                                        {holdings.stakedNexGov > 0 && (
+                                            <div className="flex justify-between items-center pl-2 mt-1 bg-cyan-900/20 rounded p-1">
+                                                <span className="text-cyan-400">NEX-GOV (Staked)</span>
+                                                <span className="font-mono text-cyan-300">{holdings.stakedNexGov.toLocaleString()}</span>
+                                            </div>
+                                        )}
                                     </div>
                                     <div>
-                                        <p className="text-gray-400 font-semibold">Non-Fungible Tokens (NFTs)</p>
+                                        <p className="text-gray-400 font-semibold mb-1">Non-Fungible Tokens (NFTs)</p>
                                         {holdings.nfts.length > 0 ? (
                                             holdings.nfts.map(nft => (
                                                 <div key={nft.id} className="flex justify-between items-center pl-2">

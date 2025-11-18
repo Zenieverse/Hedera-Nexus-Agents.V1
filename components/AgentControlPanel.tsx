@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { AgentIcon } from './AgentIcon.tsx';
 import { ResetIcon } from './ResetIcon.tsx';
@@ -9,8 +10,9 @@ interface AgentControlPanelProps {
 
 const presetTasks = [
     "Mint a new NFT collection for a digital artist and verify on-chain.",
-    "Create a new NFT for a digital land deed and transfer 100 NEX-GOV tokens to another agent.",
-    "Query the Oracle for the HBAR price. If it's below $0.08, mint a 'BUY-SIGNAL' NFT. Then, broadcast the price on the HCS.",
+    "Query the Oracle for HBAR price. If > $0.08, broadcast 'Bullish' on HCS and transfer 100 NEX-GOV to ANOTHER_AGENT.",
+    "Stake 500 NEX-GOV tokens. Then, query Oracle for HBAR price. If > $0.085, vote 'Yes' on the active DAO proposal.",
+    "Power Leveling Protocol: Execute 5 rapid verification checks to maximize XP gain.",
 ];
 
 const AgentControlPanel: React.FC<AgentControlPanelProps> = ({ onDeploy, isLoading }) => {
@@ -32,7 +34,7 @@ const AgentControlPanel: React.FC<AgentControlPanelProps> = ({ onDeploy, isLoadi
 
   const handleReset = () => {
     if (window.confirm("Are you sure you want to reset the entire simulation? All agents and assets will be deleted.")) {
-        localStorage.removeItem('hederaNexusAgentsState_v2');
+        localStorage.removeItem('hederaNexusAgentsState_v4');
         window.location.reload();
     }
   }

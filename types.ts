@@ -1,3 +1,4 @@
+
 export interface FungibleToken {
   id: string; // e.g., 'NEX-GOV'
   amount: number;
@@ -11,6 +12,7 @@ export interface NonFungibleToken {
 export interface AssetHoldings {
   fts: FungibleToken[];
   nfts: NonFungibleToken[];
+  stakedNexGov: number; // Amount of NEX-GOV tokens staked for voting power
 }
 
 export type Ledger = Record<string, AssetHoldings>; // Maps agentId to their asset holdings
@@ -31,6 +33,34 @@ export interface HcsMessage {
   agentId: string;
   message: string;
   timestamp: Date;
+}
+
+export interface GovernanceProposal {
+    id: string;
+    title: string;
+    description: string;
+    votesFor: number;
+    votesAgainst: number;
+    createdAt: Date;
+    expiresAt: Date;
+    status: 'active' | 'passed' | 'failed' | 'executed';
+    effect: {
+        type: 'fee_multiplier';
+        value: number; // e.g., 0.5 (low fees) or 2.0 (high fees)
+    };
+}
+
+export interface NetworkEvent {
+    id: string;
+    title: string;
+    description: string;
+    type: 'congestion' | 'upgrade' | 'anomaly';
+    multiplier: number; // Effect on fees
+    duration: number; // ms
+}
+  
+export interface ActiveNetworkEvent extends NetworkEvent {
+    expiresAt: Date;
 }
 
 export interface TaskStep {
@@ -56,6 +86,11 @@ export interface TaskStep {
       operator: 'gt' | 'lt';
       value: number;
   };
+
+  // Governance properties
+  governanceAction?: 'stake' | 'vote';
+  stakeAmount?: number;
+  voteOption?: 'yes' | 'no';
 }
 
 export interface ActivityLog {
@@ -72,6 +107,8 @@ export interface Agent {
   steps: TaskStep[];
   hbarBalance: number;
   memory: Partial<Record<keyof OracleData, number | string>>;
+  xp: number;
+  level: number;
 }
 
 export interface NetworkStatsData {
@@ -79,6 +116,8 @@ export interface NetworkStatsData {
     activeAgents: number;
     consensusTime: number;
     totalFees: number;
+    feeMultiplier: number; // 1.0 is base
+    totalStaked: number;
 }
 
 export interface TransactionDetails {
