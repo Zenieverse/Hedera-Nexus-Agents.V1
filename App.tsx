@@ -509,8 +509,8 @@ const App: React.FC = () => {
                 ) : selectedAgent?.status === 'error' ? (
                     <div className="flex-grow flex items-center justify-center text-red-400">
                         <div className="text-center">
-                            <p>Agent {selectedAgent.id} Halted.</p>
-                            <p className="text-sm opacity-70">Check logs for details.</p>
+                            <p className="font-bold text-lg">Agent {selectedAgent.id} Halted.</p>
+                            <p className="text-sm opacity-70 mt-2">Check logs for details.</p>
                         </div>
                     </div>
                 ) : selectedAgent?.steps.length ? (
