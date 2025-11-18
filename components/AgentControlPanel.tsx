@@ -1,11 +1,16 @@
-
 import React, { useState } from 'react';
-import { AgentIcon } from './icons/AgentIcon';
+import { AgentIcon } from './AgentIcon.tsx';
 
 interface AgentControlPanelProps {
   onDeploy: (taskDescription: string) => void;
   isLoading: boolean;
 }
+
+const presetTasks = [
+    "Mint a new NFT collection for a digital artist and verify on-chain.",
+    "Execute a multi-signature asset transfer between two corporate accounts.",
+    "Record supply chain data on Hedera Consensus Service for a shipment of coffee beans."
+];
 
 const AgentControlPanel: React.FC<AgentControlPanelProps> = ({ onDeploy, isLoading }) => {
   const [task, setTask] = useState('');
@@ -14,6 +19,12 @@ const AgentControlPanel: React.FC<AgentControlPanelProps> = ({ onDeploy, isLoadi
     e.preventDefault();
     if (task.trim() && !isLoading) {
       onDeploy(task);
+    }
+  };
+  
+  const handlePresetClick = (preset: string) => {
+    if (!isLoading) {
+      setTask(preset);
     }
   };
 
@@ -37,6 +48,22 @@ const AgentControlPanel: React.FC<AgentControlPanelProps> = ({ onDeploy, isLoadi
             className="w-full bg-gray-900/50 border border-gray-600 rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500 text-gray-200 p-2 transition duration-200"
             disabled={isLoading}
           />
+        </div>
+        <div className="space-y-2">
+            <p className="text-xs text-gray-400">Or try an example:</p>
+            <div className="flex flex-wrap gap-2">
+                {presetTasks.map((preset, index) => (
+                    <button
+                        key={index}
+                        type="button"
+                        onClick={() => handlePresetClick(preset)}
+                        disabled={isLoading}
+                        className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded-md text-cyan-300 transition-colors duration-200 disabled:opacity-50"
+                    >
+                        Preset {index + 1}
+                    </button>
+                ))}
+            </div>
         </div>
         <button
           type="submit"

@@ -1,85 +1,169 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
-import Header from './components/Header';
-import AgentControlPanel from './components/AgentControlPanel';
-import LiveActivityFeed from './components/LiveActivityFeed';
-import NetworkStats from './components/NetworkStats';
-import WorkflowVisualizer from './components/WorkflowVisualizer';
-import { generateTaskWorkflow } from './services/geminiService';
-import type { TaskStep, ActivityLog } from './types';
-import { CubeIcon } from './components/icons/CubeIcon';
+import Header from './components/Header.tsx';
+import AgentControlPanel from './components/AgentControlPanel.tsx';
+import LiveActivityFeed from './components/LiveActivityFeed.tsx';
+import NetworkStats from './components/NetworkStats.tsx';
+import WorkflowVisualizer from './components/WorkflowVisualizer.tsx';
+import TransactionModal from './components/TransactionModal.tsx';
+import AgentFleet from './components/AgentFleet.tsx';
+import { generateTaskWorkflow } from './services/geminiService.ts';
+import type { TaskStep, ActivityLog, NetworkStatsData, TransactionDetails, Agent } from './types.ts';
+import { CubeIcon } from './components/CubeIcon.tsx';
 
 const App: React.FC = () => {
-  const [taskSteps, setTaskSteps] = useState<TaskStep[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
+  const [networkStats, setNetworkStats] = useState<NetworkStatsData>({
+    tps: 12456,
+    activeAgents: 0,
+    consensusTime: 2.1,
+    totalFees: 0,
+  });
+  const [selectedTransaction, setSelectedTransaction] = useState<TransactionDetails | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' = 'info') => {
-    setActivityLogs(prev => [...prev, { message, type, timestamp: new Date() }]);
+  const generateMockTransactionId = useCallback(() => {
+    const shard = 0;
+    const realm = 0;
+    const num = Math.floor(Math.random() * 99999) + 10000;
+    const seconds = Math.floor(Date.now() / 1000);
+    const nanos = Math.floor(Math.random() * 999999999);
+    return `${shard}.${realm}.${num}@${seconds}.${nanos}`;
+  }, []);
+
+  const addLog = useCallback((message: string, type: ActivityLog['type'] = 'info', agentId?: string) => {
+    setActivityLogs(prev => [{ message, type, timestamp: new Date(), agentId }, ...prev]);
   }, []);
 
   useEffect(() => {
-    if (taskSteps.length > 0 && activeStepIndex === null) {
-      setActiveStepIndex(0);
-      addLog(`Workflow initiated for Agent Nexus-${Math.floor(Math.random() * 900) + 100}.`);
-    }
-  }, [taskSteps, activeStepIndex, addLog]);
+    const interval = setInterval(() => {
+        setNetworkStats(prevStats => ({
+            ...prevStats,
+            activeAgents: agents.filter(a => a.status === 'running').length,
+            tps: Math.max(10000, Math.floor(prevStats.tps + (Math.random() - 0.4) * 100)),
+            consensusTime: Math.max(1.5, parseFloat((prevStats.consensusTime + (Math.random() - 0.5) * 0.1).toFixed(2)))
+        }));
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [agents]);
 
   useEffect(() => {
-    if (activeStepIndex !== null && activeStepIndex < taskSteps.length) {
-      const currentStep = taskSteps[activeStepIndex];
-      
-      const timer = setTimeout(() => {
-        setTaskSteps(prev => prev.map((step, index) => 
-          index === activeStepIndex ? { ...step, status: 'in-progress' } : step
-        ));
-        addLog(`Executing: ${currentStep.name}...`);
+    const cleanupTimers: (() => void)[] = [];
 
-        const completionTimer = setTimeout(() => {
-          setTaskSteps(prev => prev.map((step, index) => 
-            index === activeStepIndex ? { ...step, status: 'completed' } : step
-          ));
-          addLog(`${currentStep.description}`, 'success');
-          
-          if (activeStepIndex < taskSteps.length - 1) {
-            setActiveStepIndex(activeStepIndex + 1);
-          } else {
-             addLog('All tasks completed. Agent entering standby mode.');
-             setActiveStepIndex(null);
-          }
-        }, 1500 + Math.random() * 1000);
-        
-        return () => clearTimeout(completionTimer);
-      }, 1000);
+    agents.forEach(agent => {
+        if (agent.status !== 'running') return;
 
-      return () => clearTimeout(timer);
-    }
-  }, [activeStepIndex, taskSteps, addLog]);
+        const inProgressIndex = agent.steps.findIndex(s => s.status === 'in-progress');
+        if (inProgressIndex !== -1) {
+            const timer = setTimeout(() => {
+                const stepCost = agent.steps[inProgressIndex].cost || 0;
+                setAgents(prev => prev.map(a => {
+                    if (a.id !== agent.id) return a;
+                    const transactionId = generateMockTransactionId();
+                    addLog(`Step Complete: ${a.steps[inProgressIndex].name}. Cost: Ħ${stepCost.toFixed(6)}. TxID: ${transactionId}`, 'success', a.id);
+                    const newSteps = a.steps.map((step, index) => 
+                        index === inProgressIndex ? { ...step, status: 'completed', transactionId } : step
+                    );
+                    const newBalance = a.hbarBalance - stepCost;
+                    setNetworkStats(prev => ({ ...prev, totalFees: prev.totalFees + stepCost }));
+                    return { ...a, steps: newSteps, hbarBalance: newBalance };
+                }));
+            }, 1500 + Math.random() * 1000);
+            cleanupTimers.push(() => clearTimeout(timer));
+            return;
+        }
+
+        const pendingIndex = agent.steps.findIndex(s => s.status === 'pending');
+        if (pendingIndex !== -1) {
+            const stepToExecute = agent.steps[pendingIndex];
+            const stepCost = stepToExecute.cost || 0;
+            
+            if (agent.hbarBalance < stepCost) {
+                 addLog(`Execution failed: Insufficient funds. Required: ~Ħ${stepCost.toFixed(6)}, Balance: Ħ${agent.hbarBalance.toFixed(6)}`, 'error', agent.id);
+                 setAgents(prev => prev.map(a => a.id === agent.id ? { ...a, status: 'error' } : a));
+                 return;
+            }
+
+            const timer = setTimeout(() => {
+                addLog(`Executing: ${stepToExecute.name} (Cost: ~Ħ${stepCost.toFixed(6)})`, 'info', agent.id);
+                setAgents(prev => prev.map(a => {
+                    if (a.id !== agent.id) return a;
+                    const newSteps = a.steps.map((step, index) => 
+                        index === pendingIndex ? { ...step, status: 'in-progress' } : step
+                    );
+                    return { ...a, steps: newSteps };
+                }));
+            }, 1000);
+            cleanupTimers.push(() => clearTimeout(timer));
+            return;
+        }
+
+        if (agent.steps.length > 0 && agent.steps.every(s => s.status === 'completed')) {
+             if (agent.status !== 'completed') {
+                setAgents(prev => prev.map(a => a.id === agent.id ? { ...a, status: 'completed' } : a));
+                addLog('All tasks completed. Agent entering standby mode.', 'info', agent.id);
+            }
+        }
+    });
+
+    return () => {
+        cleanupTimers.forEach(cleanup => cleanup());
+    };
+  }, [agents, addLog, generateMockTransactionId]);
 
   const handleDeployAgent = async (taskDescription: string) => {
     setIsLoading(true);
-    setError(null);
-    setTaskSteps([]);
-    setActivityLogs([]);
-    setActiveStepIndex(null);
+    const agentId = `Nexus-${Math.floor(Math.random() * 900) + 100}`;
+    const initialBalance = 50 + Math.random() * 50; // Random balance between 50 and 100 HBAR
+    const newAgent: Agent = { id: agentId, taskDescription, status: 'initializing', steps: [], hbarBalance: initialBalance };
 
-    addLog('Receiving task description...');
-    addLog('Contacting Nexus AI Coordinator...');
+    setAgents(prev => [...prev, newAgent]);
+    setSelectedAgentId(agentId);
+    
+    addLog(`Deploying new agent ${agentId} for task: "${taskDescription}"...`);
+    addLog(`[${agentId}] Wallet funded with Ħ${initialBalance.toFixed(4)}.`, 'info', agentId);
+    addLog(`[${agentId}] Contacting Nexus AI Coordinator...`, 'info', agentId);
 
     try {
       const steps = await generateTaskWorkflow(taskDescription);
-      addLog('AI Coordinator responded. Generating workflow...', 'success');
-      setTaskSteps(steps.map(step => ({ ...step, status: 'pending' })));
+      addLog(`[${agentId}] AI Coordinator responded. Generating workflow...`, 'success', agentId);
+      setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'running', steps: steps.map(step => ({ ...step, status: 'pending' })) } : a));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-      setError(`Failed to generate workflow: ${errorMessage}`);
-      addLog(`Workflow generation failed. ${errorMessage}`, 'error');
+      addLog(`[${agentId}] Workflow generation failed. ${errorMessage}`, 'error', agentId);
+      setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'error' } : a));
     } finally {
       setIsLoading(false);
     }
   };
+
+  const handleOpenTransactionModal = (step: TaskStep) => {
+    if (!step.transactionId) return;
+
+    const [accountId, timestamp] = step.transactionId.split('@');
+    const consensusTimestamp = new Date(parseInt(timestamp.split('.')[0]) * 1000).toISOString();
+
+    setSelectedTransaction({
+      id: step.transactionId,
+      status: 'SUCCESS',
+      consensusTimestamp,
+      memo: step.name,
+      transfers: [
+        { account: '0.0.98', amount: '-1.5 HBAR' },
+        { account: accountId, amount: '+1.2 HBAR' },
+        { account: '0.0.3', amount: '+0.3 HBAR (fees)' }
+      ],
+      fee: `Ħ${(step.cost || 0).toFixed(6)}`
+    });
+    setIsModalOpen(true);
+  };
+  
+  const handleCloseModal = () => setIsModalOpen(false);
+  const handleSelectAgent = (agentId: string) => setSelectedAgentId(agentId);
+  
+  const selectedAgent = agents.find(a => a.id === selectedAgentId);
 
   return (
     <div className="bg-gray-900 text-gray-200 min-h-screen font-mono flex flex-col">
@@ -88,25 +172,26 @@ const App: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
           <div className="lg:col-span-4 space-y-6">
             <AgentControlPanel onDeploy={handleDeployAgent} isLoading={isLoading} />
-            <NetworkStats />
+            <AgentFleet agents={agents} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} />
+            <NetworkStats stats={networkStats} />
           </div>
           <div className="lg:col-span-8 space-y-6 flex flex-col min-h-[60vh]">
             <div className="bg-gray-800/50 border border-cyan-500/20 rounded-lg p-4 flex-grow flex flex-col h-1/2">
                 <h2 className="text-lg font-bold text-cyan-400 mb-4 flex items-center">
                     <CubeIcon className="w-5 h-5 mr-2" />
-                    Agent Task Workflow
+                    {selectedAgent ? `Agent ${selectedAgent.id} Workflow` : 'Agent Task Workflow'}
                 </h2>
-                {isLoading && !taskSteps.length ? (
+                {isLoading && !selectedAgent?.steps.length ? (
                     <div className="flex-grow flex items-center justify-center">
                         <div className="text-center">
                             <div className="w-12 h-12 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
                             <p className="mt-4 text-cyan-300">AI analyzing task...</p>
                         </div>
                     </div>
-                ) : error ? (
-                    <div className="flex-grow flex items-center justify-center text-red-400">{error}</div>
-                ) : taskSteps.length > 0 ? (
-                    <WorkflowVisualizer steps={taskSteps} />
+                ) : selectedAgent?.status === 'error' ? (
+                    <div className="flex-grow flex items-center justify-center text-red-400">Failed to generate workflow for agent {selectedAgent.id}.</div>
+                ) : selectedAgent?.steps.length ? (
+                    <WorkflowVisualizer steps={selectedAgent.steps} onTransactionClick={handleOpenTransactionModal} />
                 ) : (
                     <div className="flex-grow flex items-center justify-center">
                         <p className="text-gray-400">Deploy an agent to see its workflow.</p>
@@ -117,6 +202,9 @@ const App: React.FC = () => {
           </div>
         </div>
       </main>
+      {isModalOpen && selectedTransaction && (
+        <TransactionModal transaction={selectedTransaction} onClose={handleCloseModal} />
+      )}
     </div>
   );
 };

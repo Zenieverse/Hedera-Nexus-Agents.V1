@@ -1,8 +1,9 @@
-
-import React, { useState, useEffect } from 'react';
-import { LightningBoltIcon } from './icons/LightningBoltIcon';
-import { AgentIcon } from './icons/AgentIcon';
-import { ClockIcon } from './icons/ClockIcon';
+import React from 'react';
+import { LightningBoltIcon } from './LightningBoltIcon.tsx';
+import { AgentIcon } from './AgentIcon.tsx';
+import { ClockIcon } from './ClockIcon.tsx';
+import { CoinIcon } from './CoinIcon.tsx';
+import type { NetworkStatsData } from '../types.ts';
 
 const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string; unit: string }> = ({ icon, label, value, unit }) => (
     <div className="bg-gray-900/50 p-3 rounded-lg flex items-center">
@@ -18,25 +19,11 @@ const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string; 
     </div>
 );
 
-const NetworkStats: React.FC = () => {
-    const [stats, setStats] = useState({
-        tps: 12456,
-        activeAgents: 42,
-        consensusTime: 2.1
-    });
+interface NetworkStatsProps {
+    stats: NetworkStatsData;
+}
 
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setStats(prevStats => ({
-                tps: Math.floor(prevStats.tps + (Math.random() - 0.4) * 100),
-                activeAgents: prevStats.activeAgents,
-                consensusTime: parseFloat((prevStats.consensusTime + (Math.random() - 0.5) * 0.1).toFixed(2))
-            }));
-        }, 2000);
-
-        return () => clearInterval(interval);
-    }, []);
-
+const NetworkStats: React.FC<NetworkStatsProps> = ({ stats }) => {
     return (
         <div className="bg-gray-800/50 border border-cyan-500/20 rounded-lg p-4">
             <h2 className="text-lg font-bold text-cyan-400 mb-4">Network Status</h2>
@@ -44,6 +31,7 @@ const NetworkStats: React.FC = () => {
                 <StatCard icon={<LightningBoltIcon className="w-5 h-5" />} label="Transactions/Second" value={stats.tps.toLocaleString()} unit="TPS" />
                 <StatCard icon={<AgentIcon className="w-5 h-5" />} label="Active Agents" value={stats.activeAgents.toString()} unit="Agents" />
                 <StatCard icon={<ClockIcon className="w-5 h-5" />} label="Avg. Consensus Time" value={stats.consensusTime.toString()} unit="seconds" />
+                <StatCard icon={<CoinIcon className="w-5 h-5" />} label="Total Fees Collected" value={`Ħ${stats.totalFees.toFixed(4)}`} unit="HBAR" />
             </div>
         </div>
     );

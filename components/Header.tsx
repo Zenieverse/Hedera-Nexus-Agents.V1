@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { HederaIcon } from './icons/HederaIcon';
+import { HederaIcon } from './HederaIcon.tsx';
 
 const Header: React.FC = () => {
   return (
