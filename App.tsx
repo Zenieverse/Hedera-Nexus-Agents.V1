@@ -488,7 +488,7 @@ const App: React.FC = () => {
             <AgentFleet 
                 agents={agents} 
                 selectedAgentId={selectedAgentId} 
-                onSelectAgent={handleSelectAgent}
+                onSelectAgent={handleSelectAgent} 
                 onStopAgent={handleStopAgent}
             />
             <NetworkStats stats={networkStats} />
