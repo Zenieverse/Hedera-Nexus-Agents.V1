@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { HcsMessage } from '../types.ts';
 import { RssIcon } from './RssIcon.tsx';
@@ -13,7 +14,7 @@ const HcsMessageFeed: React.FC<HcsMessageFeedProps> = ({ messages }) => {
         <RssIcon className="w-5 h-5 mr-2" />
         Hive-Mind HCS Feed
       </h2>
-      <div className="flex-grow overflow-y-auto space-y-3 pr-2 text-xs flex flex-col-reverse">
+      <div className="flex-grow overflow-y-auto space-y-3 pr-2 text-xs flex flex-col-reverse custom-scrollbar">
         {messages.length === 0 ? (
             <div className="flex-grow flex items-center justify-center h-full text-gray-500">
                 No HCS messages broadcast.

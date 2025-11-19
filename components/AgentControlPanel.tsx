@@ -6,6 +6,7 @@ import { ResetIcon } from './ResetIcon.tsx';
 interface AgentControlPanelProps {
   onDeploy: (taskDescription: string) => void;
   isLoading: boolean;
+  onReset: () => void;
 }
 
 const presetTasks = [
@@ -15,7 +16,7 @@ const presetTasks = [
     "Power Leveling Protocol: Execute 5 rapid verification checks to maximize XP gain.",
 ];
 
-const AgentControlPanel: React.FC<AgentControlPanelProps> = ({ onDeploy, isLoading }) => {
+const AgentControlPanel: React.FC<AgentControlPanelProps> = ({ onDeploy, isLoading, onReset }) => {
   const [task, setTask] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -32,13 +33,6 @@ const AgentControlPanel: React.FC<AgentControlPanelProps> = ({ onDeploy, isLoadi
     }
   };
 
-  const handleReset = () => {
-    if (window.confirm("Are you sure you want to reset the entire simulation? All agents and assets will be deleted.")) {
-        localStorage.removeItem('hederaNexusAgentsState_v4');
-        window.location.reload();
-    }
-  }
-
   return (
     <div className="bg-gray-800/50 border border-cyan-500/20 rounded-lg p-4">
       <div className="flex justify-between items-center mb-4">
@@ -46,7 +40,7 @@ const AgentControlPanel: React.FC<AgentControlPanelProps> = ({ onDeploy, isLoadi
           <AgentIcon className="w-5 h-5 mr-2" />
           Agent Deployment
         </h2>
-        <button onClick={handleReset} title="Reset Simulation" className="text-gray-400 hover:text-red-400 transition-colors p-1 rounded-md">
+        <button onClick={onReset} title="Reset Simulation" className="text-gray-400 hover:text-red-400 transition-colors p-1 rounded-md">
             <ResetIcon className="w-5 h-5" />
         </button>
       </div>

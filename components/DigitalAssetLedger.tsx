@@ -21,7 +21,7 @@ const DigitalAssetLedger: React.FC<DigitalAssetLedgerProps> = ({ ledger, agents 
                 <WalletIcon className="w-5 h-5 mr-2" />
                 Digital Asset Ledger
             </h2>
-            <div className="flex-grow overflow-y-auto space-y-4 pr-2 text-xs">
+            <div className="flex-grow overflow-y-auto space-y-4 pr-2 text-xs custom-scrollbar">
                 {agents.length === 0 ? (
                     <div className="flex items-center justify-center h-full text-gray-500">
                         Ledger is empty.

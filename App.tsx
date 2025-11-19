@@ -16,7 +16,7 @@ import { generateTaskWorkflow } from './services/geminiService.ts';
 import type { TaskStep, ActivityLog, NetworkStatsData, TransactionDetails, Agent, Ledger, AssetTransfer, OracleData, HcsMessage, GovernanceProposal, AssetHoldings, ActiveNetworkEvent } from './types.ts';
 import { CubeIcon } from './components/CubeIcon.tsx';
 
-const SAVED_STATE_KEY = 'hederaNexusAgentsState_v4';
+const SAVED_STATE_KEY = 'hederaNexusAgentsState_v5';
 
 const App: React.FC = () => {
   const [initialStateLoaded, setInitialStateLoaded] = useState(false);
@@ -82,13 +82,13 @@ const App: React.FC = () => {
   }, [agents, selectedAgentId, activityLogs, networkStats, ledger, hcsMessages, activeProposal, activeNetworkEvent, initialStateLoaded]);
 
 
-  const generateMockTransactionId = useCallback(() => {
+  const generateMockTransactionId = useCallback((agentId: string) => {
+    const accountNum = agentId.split('-')[1] || '0000';
     const shard = 0;
     const realm = 0;
-    const num = Math.floor(Math.random() * 99999) + 10000;
     const seconds = Math.floor(Date.now() / 1000);
     const nanos = Math.floor(Math.random() * 999999999);
-    return `${shard}.${realm}.${num}@${seconds}.${nanos}`;
+    return `${shard}.${realm}.${accountNum}@${seconds}.${nanos}`;
   }, []);
 
   const addLog = useCallback((message: string, type: ActivityLog['type'] = 'info', agentId?: string) => {
@@ -135,31 +135,6 @@ const App: React.FC = () => {
       return () => clearInterval(checkInterval);
 
   }, [activeNetworkEvent, addLog, initialStateLoaded]);
-
-  // Combined Fee Multiplier Calculation (DAO + Event)
-  useEffect(() => {
-      if (!initialStateLoaded) return;
-      let multiplier = 1.0;
-      
-      // Apply DAO Governance
-      if (activeProposal && activeProposal.status === 'executed') {
-          multiplier = activeProposal.effect.value;
-      } else if (networkStats.feeMultiplier !== 1.0 && (!activeProposal || activeProposal.status !== 'executed')) {
-          // Keep persistent DAO change if no active proposal overwriting, or retrieve from stats
-          // Actually, let's assume networkStats.feeMultiplier holds the "base" DAO policy
-          multiplier = networkStats.feeMultiplier; 
-      }
-
-      // Apply Network Event
-      if (activeNetworkEvent) {
-          multiplier *= activeNetworkEvent.multiplier;
-      }
-
-      // Update logic would technically go here, but since we use `networkStats.feeMultiplier` as base,
-      // we should calculate EFFECTIVE multiplier during execution, rather than updating state constantly to avoid loops.
-      // We will compute `effectiveMultiplier` inside the execution loop.
-
-  }, [activeNetworkEvent, activeProposal, networkStats.feeMultiplier, initialStateLoaded]);
 
 
   // Governance Proposal Generation and Lifecycle
@@ -238,7 +213,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!initialStateLoaded) return;
 
-    const tick = setTimeout(() => {
+    const tick = setInterval(() => {
         const now = Date.now();
         const eventMultiplier = activeNetworkEvent ? activeNetworkEvent.multiplier : 1.0;
         const effectiveFeeMultiplier = networkStats.feeMultiplier * eventMultiplier;
@@ -273,7 +248,8 @@ const App: React.FC = () => {
                     const actualCost = (step.cost || 0) * effectiveFeeMultiplier;
                     let assetTransfers: AssetTransfer[] = [];
                     let memoryUpdate: Partial<Agent['memory']> = {};
-                    const transactionId = generateMockTransactionId();
+                    // Pass agent.id to generate consistent transaction IDs
+                    const transactionId = generateMockTransactionId(agent.id);
 
                     if (step.type === 'Oracle') {
                         const value = oracleData[step.oracleKey!];
@@ -452,7 +428,7 @@ const App: React.FC = () => {
 
     }, 200);
 
-    return () => clearTimeout(tick);
+    return () => clearInterval(tick);
   }, [agents, ledger, oracleData, networkStats.feeMultiplier, activeNetworkEvent, activeProposal, initialStateLoaded, addLog, generateMockTransactionId]);
 
   const handleDeployAgent = async (taskDescription: string) => {
@@ -488,6 +464,29 @@ const App: React.FC = () => {
           addLog(`Agent ${agentId} manually stopped by user.`, 'error', agentId);
       }
   };
+  
+  const handleDismissAgent = (agentId: string) => {
+      setAgents(prev => prev.filter(a => a.id !== agentId));
+      if (selectedAgentId === agentId) setSelectedAgentId(null);
+      addLog(`Agent ${agentId} dismissed from fleet.`, 'info');
+  };
+
+  const handleFundAgent = (agentId: string) => {
+      setAgents(prev => prev.map(a => {
+          if (a.id === agentId) {
+              addLog(`Emergency funding: +10 Ħ added to ${a.id}.`, 'success', a.id);
+              return { ...a, hbarBalance: a.hbarBalance + 10 };
+          }
+          return a;
+      }));
+  };
+
+  const handleResetSimulation = () => {
+      if (window.confirm("Are you sure you want to reset the entire simulation? All agents and assets will be deleted.")) {
+          localStorage.removeItem(SAVED_STATE_KEY);
+          window.location.reload();
+      }
+  };
 
   const handleOpenTransactionModal = (step: TaskStep) => {
     if (!step.transactionId) return;
@@ -510,19 +509,21 @@ const App: React.FC = () => {
 
   return (
     <div className="bg-gray-900 text-gray-200 min-h-screen font-mono flex flex-col">
-      <Header />
+      <Header networkStatus={activeNetworkEvent ? activeNetworkEvent.type : 'optimal'} />
       {activeNetworkEvent && (
           <NetworkEventBanner event={activeNetworkEvent} />
       )}
       <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
           <div className="lg:col-span-3 space-y-6">
-            <AgentControlPanel onDeploy={handleDeployAgent} isLoading={isLoading} />
+            <AgentControlPanel onDeploy={handleDeployAgent} isLoading={isLoading} onReset={handleResetSimulation} />
             <AgentFleet 
                 agents={agents} 
                 selectedAgentId={selectedAgentId} 
                 onSelectAgent={handleSelectAgent} 
                 onStopAgent={handleStopAgent}
+                onDismissAgent={handleDismissAgent}
+                onFundAgent={handleFundAgent}
             />
             <NetworkStats stats={networkStats} />
           </div>

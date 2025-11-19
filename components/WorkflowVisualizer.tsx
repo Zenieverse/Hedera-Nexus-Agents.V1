@@ -58,7 +58,7 @@ interface WorkflowVisualizerProps {
 
 const WorkflowVisualizer: React.FC<WorkflowVisualizerProps> = ({ steps, onTransactionClick }) => {
   return (
-    <div className="space-y-2 overflow-y-auto pr-2">
+    <div className="space-y-2 overflow-y-auto pr-2 custom-scrollbar h-full">
       {steps.map((step, index) => (
         <React.Fragment key={index}>
           <div className="flex items-center space-x-4 transition-all duration-500">
