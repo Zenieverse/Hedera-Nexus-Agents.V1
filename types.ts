@@ -109,6 +109,7 @@ export interface Agent {
   memory: Partial<Record<keyof OracleData, number | string>>;
   xp: number;
   level: number;
+  nextActionAt?: number; // Timestamp for next scheduled action
 }
 
 export interface NetworkStatsData {

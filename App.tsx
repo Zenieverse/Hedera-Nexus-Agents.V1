@@ -221,7 +221,6 @@ const App: React.FC = () => {
   // Network Stats Updates
   useEffect(() => {
     const interval = setInterval(() => {
-        // Added explicit type to sum and holdings to prevent TS errors
         const currentTotalStaked = Object.values(ledger).reduce((sum: number, holdings: AssetHoldings) => sum + (holdings.stakedNexGov || 0), 0);
         
         setNetworkStats(prevStats => ({
@@ -235,192 +234,226 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [agents, ledger]);
 
-  // Agent Execution Loop
+  // ROBUST AGENT EXECUTION LOOP (Timestamp-based State Machine)
   useEffect(() => {
-    const cleanupTimers: (() => void)[] = [];
+    if (!initialStateLoaded) return;
 
-    // Calculate effective fee multiplier (Base/DAO * Event)
-    const eventMultiplier = activeNetworkEvent ? activeNetworkEvent.multiplier : 1.0;
-    const effectiveFeeMultiplier = networkStats.feeMultiplier * eventMultiplier;
+    const tick = setTimeout(() => {
+        const now = Date.now();
+        const eventMultiplier = activeNetworkEvent ? activeNetworkEvent.multiplier : 1.0;
+        const effectiveFeeMultiplier = networkStats.feeMultiplier * eventMultiplier;
 
-    agents.forEach(agent => {
-        if (agent.status !== 'running') return;
+        let ledgerUpdated = false;
+        let accumulatedLedger: Ledger = JSON.parse(JSON.stringify(ledger)); 
+        let feesToAdd = 0;
+        let hcsMessagesToAdd: HcsMessage[] = [];
+        let logsToAdd: {msg: string, type: ActivityLog['type'], id: string}[] = [];
+        let stateChanged = false;
 
-        // Calculate execution speed based on Level
-        // Level 1: 1500ms base. Level 10: 500ms base.
-        const speedReduction = (agent.level - 1) * 100;
-        const baseDelay = Math.max(500, (1500 - speedReduction) + Math.random() * 500);
+        const newAgents = agents.map(agent => {
+            if (agent.status !== 'running') return agent;
 
-        const inProgressIndex = agent.steps.findIndex(s => s.status === 'in-progress');
-        if (inProgressIndex !== -1) {
-            const timer = setTimeout(() => {
-                const completedStep = agent.steps[inProgressIndex];
-                let assetTransfers: AssetTransfer[] = [];
-                let agentMemoryUpdate: Partial<Agent['memory']> = {};
-                let cost = completedStep.cost || 0;
+            // Level 1: ~1500ms base. Level 10: ~500ms base.
+            const speedReduction = (agent.level - 1) * 100;
+            const baseDelay = Math.max(500, (1500 - speedReduction) + Math.random() * 500);
+            const stepStartDelay = 1000;
 
-                const actualCost = cost * effectiveFeeMultiplier;
+            const inProgressIndex = agent.steps.findIndex(s => s.status === 'in-progress');
+            const pendingIndex = agent.steps.findIndex(s => s.status === 'pending');
 
-                // Handle Step Logic
-                if (completedStep.type === 'Oracle') {
-                    const value = oracleData[completedStep.oracleKey!];
-                    agentMemoryUpdate[completedStep.oracleKey!] = value;
-                    addLog(`Queried Oracle for '${completedStep.oracleKey}': ${value}`, 'success', agent.id);
-                } else if (completedStep.type === 'HCS' && completedStep.message) {
-                    let processedMessage = completedStep.message;
-                    Object.entries(agent.memory).forEach(([key, value]) => {
-                       processedMessage = processedMessage.replace(new RegExp(`{{${key}}}`, 'g'), String(value));
-                    });
-                    const newHcsMessage: HcsMessage = { agentId: agent.id, message: processedMessage, timestamp: new Date() };
-                    setHcsMessages(prev => [newHcsMessage, ...prev.slice(0, 49)]);
-                    addLog(`Broadcast HCS message: "${processedMessage}"`, 'success', agent.id);
-                } else if (completedStep.type === 'Token Service') {
-                    setLedger(currentLedger => {
-                        let newLedger = JSON.parse(JSON.stringify(currentLedger));
-                        if (completedStep.tokenAction === 'mint_nft' && completedStep.assetId) {
-                            const newNft = { id: `${completedStep.assetId}-${Math.floor(Math.random() * 1000)}`, name: completedStep.assetId };
-                            newLedger[agent.id].nfts.push(newNft);
+            // --- LOGIC: COMPLETE IN-PROGRESS STEP ---
+            if (inProgressIndex !== -1) {
+                if (!agent.nextActionAt) {
+                    stateChanged = true;
+                    return { ...agent, nextActionAt: now + baseDelay };
+                }
+                
+                if (now >= agent.nextActionAt) {
+                    const step = agent.steps[inProgressIndex];
+                    const actualCost = (step.cost || 0) * effectiveFeeMultiplier;
+                    let assetTransfers: AssetTransfer[] = [];
+                    let memoryUpdate: Partial<Agent['memory']> = {};
+                    const transactionId = generateMockTransactionId();
+
+                    if (step.type === 'Oracle') {
+                        const value = oracleData[step.oracleKey!];
+                        memoryUpdate[step.oracleKey!] = value;
+                        logsToAdd.push({ msg: `Queried Oracle for '${step.oracleKey}': ${value}`, type: 'success', id: agent.id });
+                    } else if (step.type === 'HCS' && step.message) {
+                        let processedMessage = step.message;
+                        Object.entries(agent.memory).forEach(([key, value]) => {
+                           processedMessage = processedMessage.replace(new RegExp(`{{${key}}}`, 'g'), String(value));
+                        });
+                        hcsMessagesToAdd.push({ agentId: agent.id, message: processedMessage, timestamp: new Date() });
+                        logsToAdd.push({ msg: `Broadcast HCS message: "${processedMessage}"`, type: 'success', id: agent.id });
+                    } else if (step.type === 'Token Service') {
+                        ledgerUpdated = true;
+                        if (!accumulatedLedger[agent.id]) accumulatedLedger[agent.id] = { fts: [], nfts: [], stakedNexGov: 0 };
+                        
+                        if (step.tokenAction === 'mint_nft' && step.assetId) {
+                            const newNft = { id: `${step.assetId}-${Math.floor(Math.random() * 1000)}`, name: step.assetId };
+                            accumulatedLedger[agent.id].nfts.push(newNft);
                             assetTransfers.push({ assetId: newNft.id, from: 'MINT', to: agent.id });
-                            addLog(`Minted NFT ${newNft.id}.`, 'success', agent.id);
-                        } else if (completedStep.tokenAction === 'transfer_ft' && completedStep.assetId && completedStep.assetAmount && completedStep.targetAgent) {
-                            let targetId = completedStep.targetAgent;
+                            logsToAdd.push({ msg: `Minted NFT ${newNft.id}.`, type: 'success', id: agent.id });
+                        } else if (step.tokenAction === 'transfer_ft' && step.assetId && step.assetAmount) {
+                            let targetId = step.targetAgent;
                             if (targetId === 'ANOTHER_AGENT') {
                                 const otherAgents = agents.filter(a => a.id !== agent.id && a.status !== 'error');
                                 targetId = otherAgents.length > 0 ? otherAgents[Math.floor(Math.random() * otherAgents.length)].id : '';
                             }
-                            const senderFts = newLedger[agent.id].fts;
-                            const senderTokenIndex = senderFts.findIndex((t: any) => t.id === completedStep.assetId);
-                            if (targetId && newLedger[targetId] && senderTokenIndex > -1 && senderFts[senderTokenIndex].amount >= completedStep.assetAmount) {
-                                senderFts[senderTokenIndex].amount -= completedStep.assetAmount;
-                                const receiverFts = newLedger[targetId].fts;
-                                const receiverTokenIndex = receiverFts.findIndex((t: any) => t.id === completedStep.assetId);
+                            const senderFts = accumulatedLedger[agent.id].fts;
+                            const senderTokenIndex = senderFts.findIndex((t) => t.id === step.assetId);
+                            if (targetId && accumulatedLedger[targetId] && senderTokenIndex > -1 && senderFts[senderTokenIndex].amount >= step.assetAmount) {
+                                senderFts[senderTokenIndex].amount -= step.assetAmount;
+                                const receiverFts = accumulatedLedger[targetId].fts;
+                                const receiverTokenIndex = receiverFts.findIndex((t) => t.id === step.assetId);
                                 if (receiverTokenIndex > -1) {
-                                    receiverFts[receiverTokenIndex].amount += completedStep.assetAmount;
+                                    receiverFts[receiverTokenIndex].amount += step.assetAmount;
                                 } else {
-                                    receiverFts.push({ id: completedStep.assetId, amount: completedStep.assetAmount });
+                                    receiverFts.push({ id: step.assetId, amount: step.assetAmount });
                                 }
-                                assetTransfers.push({ assetId: completedStep.assetId, amount: completedStep.assetAmount, from: agent.id, to: targetId });
-                                addLog(`Transferred ${completedStep.assetAmount} ${completedStep.assetId} to ${targetId}.`, 'success', agent.id);
+                                assetTransfers.push({ assetId: step.assetId, amount: step.assetAmount, from: agent.id, to: targetId });
+                                logsToAdd.push({ msg: `Transferred ${step.assetAmount} ${step.assetId} to ${targetId}.`, type: 'success', id: agent.id });
                             } else {
-                                addLog(`FT Transfer failed. Check balance or target.`, 'error', agent.id);
+                                logsToAdd.push({ msg: `FT Transfer failed. Check balance or target.`, type: 'error', id: agent.id });
                             }
                         }
-                        return newLedger;
-                    });
-                } else if (completedStep.type === 'Governance') {
-                    if (completedStep.governanceAction === 'stake' && completedStep.stakeAmount) {
-                        setLedger(currentLedger => {
-                            const newLedger = JSON.parse(JSON.stringify(currentLedger));
-                            const fts = newLedger[agent.id].fts;
-                            const nexGovIndex = fts.findIndex((t: any) => t.id === 'NEX-GOV');
-                            
-                            const stakeAmount = completedStep.stakeAmount || 0;
-
-                            if (nexGovIndex > -1 && fts[nexGovIndex].amount >= stakeAmount) {
-                                fts[nexGovIndex].amount -= stakeAmount;
-                                newLedger[agent.id].stakedNexGov = (newLedger[agent.id].stakedNexGov || 0) + stakeAmount;
-                                addLog(`Staked ${stakeAmount} NEX-GOV for voting power.`, 'success', agent.id);
+                    } else if (step.type === 'Governance') {
+                        if (step.governanceAction === 'stake' && step.stakeAmount) {
+                            ledgerUpdated = true;
+                            const fts = accumulatedLedger[agent.id].fts;
+                            const nexGovIndex = fts.findIndex((t) => t.id === 'NEX-GOV');
+                            if (nexGovIndex > -1 && fts[nexGovIndex].amount >= step.stakeAmount) {
+                                fts[nexGovIndex].amount -= step.stakeAmount;
+                                accumulatedLedger[agent.id].stakedNexGov = (accumulatedLedger[agent.id].stakedNexGov || 0) + step.stakeAmount;
+                                logsToAdd.push({ msg: `Staked ${step.stakeAmount} NEX-GOV.`, type: 'success', id: agent.id });
                             } else {
-                                addLog(`Staking failed: Insufficient NEX-GOV.`, 'error', agent.id);
+                                logsToAdd.push({ msg: `Staking failed: Insufficient NEX-GOV.`, type: 'error', id: agent.id });
                             }
-                            return newLedger;
-                        });
-                    } else if (completedStep.governanceAction === 'vote' && completedStep.voteOption) {
-                        const votingPower: number = ledger[agent.id]?.stakedNexGov || 0;
-                        if (votingPower > 0 && activeProposal && activeProposal.status === 'active') {
-                            setActiveProposal((prev: GovernanceProposal | null) => {
-                                if (!prev) return null;
-                                return {
-                                    ...prev,
-                                    votesFor: completedStep.voteOption === 'yes' ? prev.votesFor + votingPower : prev.votesFor,
-                                    votesAgainst: completedStep.voteOption === 'no' ? prev.votesAgainst + votingPower : prev.votesAgainst,
-                                };
-                            });
-                            addLog(`Voted ${completedStep.voteOption.toUpperCase()} on ${activeProposal.id} with ${votingPower} power.`, 'success', agent.id);
-                        } else {
-                            addLog(`Voting failed: No active proposal or no staked tokens.`, 'error', agent.id);
+                        } else if (step.governanceAction === 'vote' && step.voteOption) {
+                             const votingPower: number = ledger[agent.id]?.stakedNexGov || 0;
+                             if (votingPower > 0 && activeProposal && activeProposal.status === 'active') {
+                                 logsToAdd.push({ msg: `Voted ${step.voteOption.toUpperCase()} on ${activeProposal.id}.`, type: 'success', id: agent.id });
+                             } else {
+                                 logsToAdd.push({ msg: `Voting failed.`, type: 'error', id: agent.id });
+                             }
                         }
                     }
-                }
-                
-                setAgents(prev => prev.map(a => {
-                    if (a.id !== agent.id) return a;
-                    const transactionId = generateMockTransactionId();
-                    addLog(`Step Complete: ${a.steps[inProgressIndex].name}. Cost: Ħ${actualCost.toFixed(6)}. TxID: ${transactionId}`, 'success', a.id);
-                    
-                    // XP Logic
+
+                    logsToAdd.push({ msg: `Step Complete: ${step.name}. Cost: Ħ${actualCost.toFixed(6)}. TxID: ${transactionId}`, type: 'success', id: agent.id });
+                    feesToAdd += actualCost;
+
                     const xpGain = 50 + Math.floor(Math.random() * 50);
-                    const newXp = a.xp + xpGain;
+                    const newXp = agent.xp + xpGain;
                     const nextLevel = Math.floor(newXp / 500) + 1;
-                    if (nextLevel > a.level) {
-                        addLog(`LEVEL UP! Agent ${a.id} reached Level ${nextLevel}. Efficiency increased.`, 'success', a.id);
+                    if (nextLevel > agent.level) {
+                        logsToAdd.push({ msg: `LEVEL UP! Agent ${agent.id} reached Level ${nextLevel}.`, type: 'success', id: agent.id });
                     }
 
-                    const newSteps = a.steps.map((step, index) => 
-                        index === inProgressIndex ? { ...step, status: 'completed', transactionId, assetTransfers } : step
-                    );
-                    const newBalance = a.hbarBalance - actualCost;
-                    const newMemory = { ...a.memory, ...agentMemoryUpdate };
-                    setNetworkStats(prev => ({ ...prev, totalFees: prev.totalFees + actualCost }));
-                    return { ...a, steps: newSteps, hbarBalance: newBalance, memory: newMemory, xp: newXp, level: nextLevel };
-                }));
-            }, baseDelay);
-            cleanupTimers.push(() => clearTimeout(timer));
-            return;
-        }
+                    stateChanged = true;
+                    return {
+                        ...agent,
+                        steps: agent.steps.map((s, i) => i === inProgressIndex ? { ...s, status: 'completed', transactionId, assetTransfers } : s),
+                        hbarBalance: agent.hbarBalance - actualCost,
+                        memory: { ...agent.memory, ...memoryUpdate },
+                        xp: newXp,
+                        level: nextLevel,
+                        nextActionAt: undefined
+                    };
+                }
+                return agent;
+            }
 
-        const pendingIndex = agent.steps.findIndex(s => s.status === 'pending');
-        if (pendingIndex !== -1) {
-            const stepToExecute = agent.steps[pendingIndex];
-            const stepCost = (stepToExecute.cost || 0) * effectiveFeeMultiplier;
+            // --- LOGIC: START PENDING STEP ---
+            if (pendingIndex !== -1) {
+                if (!agent.nextActionAt) {
+                    stateChanged = true;
+                    return { ...agent, nextActionAt: now + stepStartDelay };
+                }
+
+                if (now >= agent.nextActionAt) {
+                    const step = agent.steps[pendingIndex];
+                    const stepCost = (step.cost || 0) * effectiveFeeMultiplier;
+                    
+                    if (step.condition) {
+                        const { key, operator, value } = step.condition;
+                        const memoryValue = agent.memory[key as keyof Agent['memory']];
+                        let conditionMet = false;
+                        if (typeof memoryValue === 'number') {
+                            if (operator === 'gt' && memoryValue > value) conditionMet = true;
+                            if (operator === 'lt' && memoryValue < value) conditionMet = true;
+                        }
+                        if (!conditionMet) {
+                            logsToAdd.push({ msg: `Condition not met, skipping: "${step.name}"`, type: 'info', id: agent.id });
+                            stateChanged = true;
+                            return {
+                                ...agent,
+                                steps: agent.steps.map((s, i) => i === pendingIndex ? { ...s, status: 'skipped' } : s),
+                                nextActionAt: undefined
+                            };
+                        }
+                    }
+
+                    if (agent.hbarBalance < stepCost) {
+                        logsToAdd.push({ msg: `Execution failed: Insufficient funds.`, type: 'error', id: agent.id });
+                        stateChanged = true;
+                        return { ...agent, status: 'error' };
+                    }
+
+                    logsToAdd.push({ msg: `Executing: ${step.name} (Cost: ~Ħ${stepCost.toFixed(6)})`, type: 'info', id: agent.id });
+                    stateChanged = true;
+                    return {
+                        ...agent,
+                        steps: agent.steps.map((s, i) => i === pendingIndex ? { ...s, status: 'in-progress' } : s),
+                        nextActionAt: undefined
+                    };
+                }
+                return agent;
+            }
+
+            // --- LOGIC: ALL DONE ---
+            if (agent.steps.length > 0 && agent.steps.every(s => s.status === 'completed' || s.status === 'skipped')) {
+                stateChanged = true;
+                logsToAdd.push({ msg: 'All tasks completed. Agent entering standby mode.', type: 'info', id: agent.id });
+                return { ...agent, status: 'completed' };
+            }
+
+            return agent;
+        });
+
+        if (stateChanged) {
+            setAgents(newAgents);
+            if (ledgerUpdated) setLedger(accumulatedLedger);
+            if (logsToAdd.length > 0) logsToAdd.forEach(l => addLog(l.msg, l.type, l.id));
+            if (feesToAdd > 0) setNetworkStats(prev => ({ ...prev, totalFees: prev.totalFees + feesToAdd }));
+            if (hcsMessagesToAdd.length > 0) setHcsMessages(prev => [...hcsMessagesToAdd, ...prev]);
             
-            if (stepToExecute.condition) {
-                const { key, operator, value } = stepToExecute.condition;
-                const memoryValue = agent.memory[key as keyof Agent['memory']];
-                let conditionMet = false;
-                if (typeof memoryValue === 'number') {
-                    if (operator === 'gt' && memoryValue > value) conditionMet = true;
-                    if (operator === 'lt' && memoryValue < value) conditionMet = true;
-                }
-                if (!conditionMet) {
-                    addLog(`Condition not met, skipping step: "${stepToExecute.name}"`, 'info', agent.id);
-                    setAgents(prev => prev.map(a => a.id === agent.id ? { ...a, steps: a.steps.map((s, i) => i === pendingIndex ? { ...s, status: 'skipped' } : s) } : a));
-                    return; 
-                }
-            }
+             if (activeProposal && activeProposal.status === 'active') {
+                 let votesForAdd = 0;
+                 let votesAgainstAdd = 0;
+                 newAgents.forEach((agent, idx) => {
+                     const voteLogs = logsToAdd.filter(l => l.id === agent.id && l.msg.includes('Voted'));
+                     voteLogs.forEach(log => {
+                         const power = ledger[agent.id]?.stakedNexGov || 0;
+                         if (log.msg.includes('YES')) votesForAdd += power;
+                         if (log.msg.includes('NO')) votesAgainstAdd += power;
+                     });
+                 });
 
-            if (agent.hbarBalance < stepCost) {
-                 addLog(`Execution failed: Insufficient funds. Required: ~Ħ${stepCost.toFixed(6)}, Balance: Ħ${agent.hbarBalance.toFixed(6)}`, 'error', agent.id);
-                 setAgents(prev => prev.map(a => a.id === agent.id ? { ...a, status: 'error' } : a));
-                 return;
-            }
-
-            const timer = setTimeout(() => {
-                addLog(`Executing: ${stepToExecute.name} (Cost: ~Ħ${stepCost.toFixed(6)})`, 'info', agent.id);
-                setAgents(prev => prev.map(a => {
-                    if (a.id !== agent.id) return a;
-                    const newSteps = a.steps.map((step, index) => 
-                        index === pendingIndex ? { ...step, status: 'in-progress' } : step
-                    );
-                    return { ...a, steps: newSteps };
-                }));
-            }, 1000);
-            cleanupTimers.push(() => clearTimeout(timer));
-            return;
+                 if (votesForAdd > 0 || votesAgainstAdd > 0) {
+                     setActiveProposal(prev => prev ? ({
+                         ...prev,
+                         votesFor: prev.votesFor + votesForAdd,
+                         votesAgainst: prev.votesAgainst + votesAgainstAdd
+                     }) : null);
+                 }
+             }
         }
 
-        if (agent.steps.length > 0 && agent.steps.every(s => s.status === 'completed' || s.status === 'skipped')) {
-             if (agent.status !== 'completed') {
-                setAgents(prev => prev.map(a => a.id === agent.id ? { ...a, status: 'completed' } : a));
-                addLog('All tasks completed. Agent entering standby mode.', 'info', agent.id);
-            }
-        }
-    });
+    }, 200);
 
-    return () => {
-        cleanupTimers.forEach(cleanup => cleanup());
-    };
-  }, [agents, addLog, generateMockTransactionId, oracleData, networkStats.feeMultiplier, ledger, activeProposal, activeNetworkEvent]);
+    return () => clearTimeout(tick);
+  }, [agents, ledger, oracleData, networkStats.feeMultiplier, activeNetworkEvent, activeProposal, initialStateLoaded, addLog, generateMockTransactionId]);
 
   const handleDeployAgent = async (taskDescription: string) => {
     setIsLoading(true);
@@ -471,6 +504,7 @@ const App: React.FC = () => {
   
   const handleCloseModal = () => setIsModalOpen(false);
   const handleSelectAgent = (agentId: string) => setSelectedAgentId(agentId);
+  const handleClearLogs = () => setActivityLogs([]);
   
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
 
@@ -494,9 +528,16 @@ const App: React.FC = () => {
           </div>
           <div className="lg:col-span-6 space-y-6 flex flex-col min-h-[60vh]">
             <div className="bg-gray-800/50 border border-cyan-500/20 rounded-lg p-4 flex-grow flex flex-col h-1/2">
-                <h2 className="text-lg font-bold text-cyan-400 mb-4 flex items-center">
-                    <CubeIcon className="w-5 h-5 mr-2" />
-                    {selectedAgent ? `Agent ${selectedAgent.id} Workflow` : 'Agent Task Workflow'}
+                <h2 className="text-lg font-bold text-cyan-400 mb-4 flex items-center justify-between">
+                    <div className="flex items-center">
+                        <CubeIcon className="w-5 h-5 mr-2" />
+                        {selectedAgent ? `Agent ${selectedAgent.id} Workflow` : 'Agent Task Workflow'}
+                    </div>
+                    {selectedAgent?.status === 'error' && (
+                        <span className="text-xs bg-red-900/50 text-red-300 px-2 py-1 rounded border border-red-500/50 animate-pulse">
+                            HALTED
+                        </span>
+                    )}
                 </h2>
                 {isLoading && !selectedAgent?.steps.length ? (
                     <div className="flex-grow flex items-center justify-center">
@@ -505,17 +546,11 @@ const App: React.FC = () => {
                             <p className="mt-4 text-cyan-300">AI analyzing task...</p>
                         </div>
                     </div>
-                ) : selectedAgent?.status === 'error' ? (
-                    <div className="flex-grow flex items-center justify-center text-red-400 flex-col">
-                        <div className="text-center">
-                            <p className="font-bold text-lg">Agent {selectedAgent.id} Halted.</p>
-                            <p className="text-sm opacity-70 mt-2">Check logs for details.</p>
-                        </div>
-                    </div>
                 ) : selectedAgent?.steps.length ? (
                     <>
-                        <WorkflowVisualizer steps={selectedAgent.steps} onTransactionClick={handleOpenTransactionModal} />
-                        {/* Active Memory Visualization */}
+                        <div className={`relative flex-grow overflow-hidden flex flex-col ${selectedAgent.status === 'error' ? 'opacity-75 grayscale-[0.5]' : ''}`}>
+                             <WorkflowVisualizer steps={selectedAgent.steps} onTransactionClick={handleOpenTransactionModal} />
+                        </div>
                         {selectedAgent && Object.keys(selectedAgent.memory).length > 0 && (
                             <div className="mt-4 pt-4 border-t border-gray-700/50">
                                 <h3 className="text-xs font-bold text-cyan-400/70 mb-2 uppercase tracking-wider flex items-center">
@@ -539,7 +574,7 @@ const App: React.FC = () => {
                     </div>
                 )}
             </div>
-            <LiveActivityFeed logs={activityLogs} />
+            <LiveActivityFeed logs={activityLogs} onClear={handleClearLogs} />
           </div>
           <div className="lg:col-span-3 space-y-6 flex flex-col">
             <GovernancePanel proposal={activeProposal} />
