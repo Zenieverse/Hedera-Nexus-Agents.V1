@@ -248,7 +248,7 @@ const App: React.FC = () => {
                     const actualCost = (step.cost || 0) * effectiveFeeMultiplier;
                     let assetTransfers: AssetTransfer[] = [];
                     let memoryUpdate: Partial<Agent['memory']> = {};
-                    // FIX: Pass agent.id to generate consistent transaction IDs
+                    // Pass agent.id to generate consistent transaction IDs
                     const transactionId = generateMockTransactionId(agent.id);
 
                     if (step.type === 'Oracle') {
